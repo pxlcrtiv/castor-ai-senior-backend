@@ -4,8 +4,11 @@ Middleware layer that validates user inputs before they reach the LLM,
 preventing prompt injection attacks and unauthorized data access.
 """
 
+from __future__ import annotations
+
 import re
 from dataclasses import dataclass
+from typing import Optional
 
 from src.config.settings import settings
 

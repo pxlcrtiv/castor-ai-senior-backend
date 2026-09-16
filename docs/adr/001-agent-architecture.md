@@ -1,57 +1,36 @@
-# ADR-001: Agent Architecture Pattern
+# ADR-001: Multi-Agent Architecture with AutoGen
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
-We need to build a multi-agent system for ERP invoice reconciliation that:
-
-1. Processes natural language queries
-2. Chains multiple tool calls (ERP lookup + tax calculation)
-3. Integrates RAG for regulatory document retrieval
-4. Maintains conversation context across sessions
+We need a multi-agent system for ERP invoice reconciliation that processes natural language queries, chains tool calls, integrates RAG, and maintains session state. The test explicitly asks for a "multi-agent" system — not a single agent with tools.
 
 ## Decision
 
-**Use LangChain with ReAct (Reasoning + Acting) pattern** as the primary orchestration framework.
+**Use Microsoft AutoGen as the orchestration framework** with a three-agent topology:
 
-### Why ReAct over alternatives:
+1. **Conciliator** — receives user queries, decomposes tasks, delegates to specialists, synthesizes responses
+2. **ERP Analyst** — handles SQL lookups, tax calculations, invoice management
+3. **Compliance Officer** — handles RAG-based regulation lookup with metadata filtering
 
-| Pattern | Pros | Cons | Verdict |
-|---------|------|------|---------|
-| ReAct (LangChain) | Proven tool chaining, streaming support, large ecosystem | Slightly more overhead | ✅ Selected |
-| AutoGen | Great for multi-agent debate | Overkill for single-agent with tools | ❌ |
-| LlamaIndex | Superior RAG | Weaker agent orchestration | ❌ |
-| Custom (raw API) | Full control | High implementation cost | ❌ |
+### Why AutoGen over alternatives:
 
-### Architecture Layers:
+| Framework | Agent Count | Tool Chaining | Human-in-Loop | Streaming | Verdict |
+|-----------|-------------|---------------|---------------|-----------|---------|
+| AutoGen | Multi-agent native | Built-in | Built-in | Custom wrapper | ✅ Selected |
+| LangChain | Single agent + tools | Excellent | Manual | Native SSE | ❌ Single-agent |
+| Raw OpenAI SDK | Manual orchestration | Manual | Manual | Native | ❌ Too much work |
+| LlamaIndex | Query engine focus | RAG-native | Limited | Limited | ❌ Wrong paradigm |
 
-```
-┌─────────────────────────────────────────┐
-│         FastAPI + SSE Streaming         │  ← API Layer
-├─────────────────────────────────────────┤
-│      ReAct Agent (LangChain)           │  ← Orchestration
-├─────────────────────────────────────────┤
-│  ┌──────────┐  ┌────────────────────┐  │
-│  │ ERP Mock │  │ RAG (ChromaDB)     │  │  ← Tools Layer
-│  │ Tools    │  │ Metadata Filtering │  │
-│  └──────────┘  └────────────────────┘  │
-├─────────────────────────────────────────┤
-│    Security (Prompt Validation)        │  ← Guardrails
-│    PII Detection + Injection Defense   │
-└─────────────────────────────────────────┘
-```
+### Streaming Strategy:
+
+Hybrid approach — AutoGen handles multi-agent orchestration, but the final response streams via raw OpenAI SDK. This uses each tool where it's strongest.
 
 ## Consequences
 
-- **Positive:** Battle-tested framework, easy to swap LLM providers (model-agnostic)
-- **Negative:** LangChain dependency; may need abstraction layer for migration
-- **Mitigation:** Keep tools as pure async functions; wrap LangChain at boundary only
-
-## Alternatives Considered
-
-- **Azure AI Agent Service:** Would lock us to Azure ecosystem
-- **Semantic Kernel:** Good but smaller community than LangChain
-- **CrewAI:** Designed for multi-agent, but we only need one agent with tools
+- **Positive:** True multi-agent separation of concerns, built-in human-in-the-loop support, matches test requirements
+- **Negative:** No native streaming — requires hybrid approach with raw OpenAI SDK
+- **Mitigation:** Custom async wrapper that bridges AutoGen responses to SSE streaming

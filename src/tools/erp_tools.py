@@ -17,7 +17,7 @@ _MOCK_ERP_DATA: dict[str, dict[str, Any]] = {
         "tax": 2775.69,
         "region": "CDMX",
         "status": "pending_review",
-        " discrepancy": 250.00,
+        "discrepancy": 250.00,
         "discrepancy_reason": "IVA calculado con tasa incorrecta (16% vs 11%)",
         "date": "2024-09-15",
         "items": [
