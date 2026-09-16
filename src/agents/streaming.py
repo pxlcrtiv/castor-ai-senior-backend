@@ -1,8 +1,7 @@
-"""Streaming adapter — bridges AutoGen orchestration with SSE streaming.
+"""Streaming adapter — bridges agent orchestration with SSE streaming.
 
-Uses raw OpenAI SDK for the final streaming response while
-keeping AutoGen for multi-agent orchestration. This is the
-hybrid approach: each tool where it's strongest.
+Uses the configured LLM provider for streaming responses.
+Supports OpenAI, Gemini, OpenCode Zen, and Vercel AI Gateway.
 """
 
 from __future__ import annotations
@@ -10,16 +9,28 @@ from __future__ import annotations
 import json
 from typing import AsyncIterator
 
+from src.config.llm_provider import LLMConfig, LLMProvider, create_llm_client
 from src.security.rbac import rbac, audit_trail
 from src.security.prompt_validator import prompt_validator
 
 
 class StreamAdapter:
-    """Stream agent responses token-by-token via async generator.
+    """Stream LLM responses token-by-token via async generator.
 
-    Flow: validate → RBAC check → mock stream → audit log
-    In production: validate → RBAC check → OpenAI streaming → audit log
+    Flow: validate → RBAC check → LLM streaming → audit log
     """
+
+    def __init__(self, config: LLMConfig | None = None):
+        self._config = config
+        self._client = None
+
+    def _get_client(self):
+        """Lazy-init the LLM client."""
+        if self._client is None:
+            if self._config is None:
+                self._config = LLMConfig.from_env()
+            self._client = create_llm_client(self._config)
+        return self._client
 
     async def stream(
         self,
@@ -60,48 +71,82 @@ class StreamAdapter:
             session_id=session_id,
         )
 
-        # 3. Generate response (mock for prototype)
-        # In production: yield from openai.ChatCompletion.create(stream=True, ...)
-        response = self._mock_response(query)
+        # 3. Stream from configured provider
+        try:
+            config = self._config or LLMConfig.from_env()
 
-        # Simulate token-by-token streaming
-        words = response.split()
-        for i, word in enumerate(words):
-            prefix = " " if i > 0 else ""
-            yield prefix + word
+            if config.provider == LLMProvider.GEMINI:
+                async for token in self._stream_gemini(query, config):
+                    yield token
+            else:
+                # OpenAI, OpenCode Zen, Vercel AI — all use OpenAI SDK
+                async for token in self._stream_openai(query, config):
+                    yield token
 
-    def _mock_response(self, query: str) -> str:
-        """Generate mock response for prototype.
+        except Exception as e:
+            yield f"\n\n⚠️ Error: {e}"
 
-        In production, this would be the OpenAI streaming call.
-        """
-        if "4402" in query:
-            return (
-                "📋 Factura #4402 encontrada en el ERP.\n\n"
-                "Proveedor: Logística Express S.A.\n"
-                "Monto: $15,420.50 MXN\n"
-                "Estado: Pendiente de revisión\n"
-                "Discrepancia: $250.00 (IVA calculado con tasa incorrecta)"
+    async def _stream_openai(
+        self, query: str, config: LLMConfig
+    ) -> AsyncIterator[str]:
+        """Stream using OpenAI-compatible API (openai, zen, vercel)."""
+        from openai import OpenAI
+
+        kwargs = {"api_key": config.api_key}
+        if config.base_url:
+            kwargs["base_url"] = config.base_url
+
+        client = OpenAI(**kwargs)
+
+        # Use a system prompt for the reconciliation context
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Eres el agente de conciliación fiscal de la empresa A. "
+                    "Responde en español de forma concisa. "
+                    "Si consultas datos, usa las herramientas disponibles."
+                ),
+            },
+            {"role": "user", "content": query},
+        ]
+
+        # Streaming call
+        stream = client.chat.completions.create(
+            model=config.model,
+            messages=messages,
+            temperature=config.temperature,
+            stream=True,
+        )
+
+        for chunk in stream:
+            if chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
+
+    async def _stream_gemini(
+        self, query: str, config: LLMConfig
+    ) -> AsyncIterator[str]:
+        """Stream using Google Gemini API."""
+        try:
+            import google.generativeai as genai
+
+            genai.configure(api_key=config.api_key)
+            model = genai.GenerativeModel(config.model)
+
+            response = model.generate_content(
+                query,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=config.temperature,
+                ),
+                stream=True,
             )
-        elif "4403" in query:
-            return (
-                "📋 Factura #4403 encontrada.\n\n"
-                "Proveedor: Transporte Global Ltd.\n"
-                "Monto: $8,750.00 MXN\n"
-                "Estado: Aprobada"
-            )
-        elif "pendiente" in query.lower():
-            return (
-                "📋 Facturas pendientes de revisión:\n\n"
-                "• #4402 - Logística Express ($15,420.50) - Pendiente\n"
-                "• #4404 - Envíos Rápidos ($23,100.00) - Marcada"
-            )
-        else:
-            return (
-                f"🤖 Procesando consulta: '{query}'\n\n"
-                "El agente está analizando la solicitud. "
-                "Se requiere OPENAI_API_KEY para respuestas reales."
-            )
+
+            for chunk in response:
+                if chunk.text:
+                    yield chunk.text
+
+        except ImportError:
+            yield "⚠️ Gemini SDK not installed. Run: pip install google-generativeai"
 
 
 def sse_format(token: str) -> str:
