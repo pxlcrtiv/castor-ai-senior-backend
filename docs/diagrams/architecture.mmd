@@ -2,8 +2,8 @@
 
 flowchart TD
     %% User Layer
-    USER([👤 Usuario<br/>Portal Angular])
-    VALIDATOR{🛡️ Validador<br/>de Seguridad<br/>Prompt Injection<br/>+ PII Check}
+    USER([👤 User<br/>Portal Angular])
+    VALIDATOR{🛡️ Security Layer<br/>Prompt Injection<br/>+ PII Check}
 
     %% Agent Layer
     ORCHESTRATOR[🤖 Conciliator<br/>AutoGen Multi-Agent<br/>GroupChat]
@@ -12,29 +12,29 @@ flowchart TD
 
     %% Tools Layer
     ERP[🗄️ SQL Tool<br/>get_erp_data<br/>Mock SQL Server]
-    TAX[🧮 Tax Tool<br/>calculate_tax_discrepancy<br/>Lógica Fiscal]
-    PENDING[📋 list_pending_invoices<br/>Facturas en revisión]
+    TAX[🧮 Tax Tool<br/>calculate_tax_discrepancy<br/>Tax Logic]
+    PENDING[📋 list_pending_invoices<br/>Pending Invoices]
 
     %% RAG Layer
     RAG[📚 RAG Pipeline<br/>Metadata Filtering<br/>ChromaDB + Embeddings]
-    PDFS[📄 Manuales PDF<br/>Normativas 2024]
-    REGS[(🏛️ Regulaciones<br/>Código Fiscal<br/>Manuales)]
+    PDFS[📄 PDF Manuals<br/>Regulations 2024]
+    REGS[(🏛️ Regulations<br/>Tax Code<br/>Manuals)]
 
     %% Decision Layer
-    DECISION{⚖️ Decisión<br/>¿Humano o<br/>Asiento ERP?}
-    HUMAN([👨‍💼 Notificar<br/>a Humano])
-    ERP_ACTION[📝 Generar Asiento<br/>de Ajuste en ERP]
+    DECISION{⚖️ Decision<br/>Human or<br/>ERP Adjustment?}
+    HUMAN([👨‍💼 Notify<br/>Human])
+    ERP_ACTION[📝 Generate<br/>ERP Adjustment]
 
     %% Memory
-    MEMORY[(🧠 Memoria<br/>de Sesión<br/>Conversational<br/>Buffer Memory)]
+    MEMORY[(🧠 Session Memory<br/>Conversational<br/>Buffer)]
 
     %% Guardrails
-    GUARDRAILS[🔒 Guardrails<br/>• No revelar salarios<br/>• No aprobar > $10K auto<br/>• Audit trail<br/>• Sanitizar outputs]
+    GUARDRAILS[🔒 Guardrails<br/>• No salary leaks<br/>• No auto-approve > $10K<br/>• Audit trail<br/>• Output sanitization]
 
     %% Flow
-    USER -->|Consulta| VALIDATOR
-    VALIDATOR -->|✅ Seguro| ORCHESTRATOR
-    VALIDATOR -->|❌ Bloqueado| USER
+    USER -->|Query| VALIDATOR
+    VALIDATOR -->|✅ Safe| ORCHESTRATOR
+    VALIDATOR -->|❌ Blocked| USER
 
     ORCHESTRATOR --> ERP_AGENT
     ORCHESTRATOR --> COMPLIANCE
@@ -46,7 +46,7 @@ flowchart TD
     COMPLIANCE --> RAG
 
     RAG <--> REGS
-    PDFS -.->|Indexar| RAG
+    PDFS -.->|Index| RAG
 
     ERP --> ERP_AGENT
     TAX --> ERP_AGENT
@@ -57,11 +57,11 @@ flowchart TD
     COMPLIANCE --> ORCHESTRATOR
 
     ORCHESTRATOR --> DECISION
-    DECISION -->|Requiere revisión| HUMAN
-    DECISION -->|Aprobado| ERP_ACTION
+    DECISION -->|Escalate| HUMAN
+    DECISION -->|Approved| ERP_ACTION
 
     ORCHESTRATOR -.-> GUARDRAILS
-    GUARDRAILS -.->|Sanitizar| USER
+    GUARDRAILS -.->|Sanitize| USER
 
     %% Styling
     classDef userStyle fill:#e94560,stroke:#1a1a2e,color:#fff
