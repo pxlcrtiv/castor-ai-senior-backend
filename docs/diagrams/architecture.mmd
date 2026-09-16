@@ -6,7 +6,9 @@ flowchart TD
     VALIDATOR{🛡️ Validador<br/>de Seguridad<br/>Prompt Injection<br/>+ PII Check}
 
     %% Agent Layer
-    ORCHESTRATOR[🤖 Agente Orquestador<br/>ReAct Pattern<br/>LangChain]
+    ORCHESTRATOR[🤖 Conciliator<br/>AutoGen Multi-Agent<br/>GroupChat]
+    ERP_AGENT[📊 ERP Analyst<br/>SQL + Tax Tools]
+    COMPLIANCE[📋 Compliance Officer<br/>RAG + Regulations]
 
     %% Tools Layer
     ERP[🗄️ SQL Tool<br/>get_erp_data<br/>Mock SQL Server]
@@ -34,19 +36,25 @@ flowchart TD
     VALIDATOR -->|✅ Seguro| ORCHESTRATOR
     VALIDATOR -->|❌ Bloqueado| USER
 
-    ORCHESTRATOR <-->|Historial| MEMORY
-    ORCHESTRATOR --> ERP
-    ORCHESTRATOR --> TAX
-    ORCHESTRATOR --> PENDING
-    ORCHESTRATOR --> RAG
+    ORCHESTRATOR --> ERP_AGENT
+    ORCHESTRATOR --> COMPLIANCE
+
+    ERP_AGENT --> ERP
+    ERP_AGENT --> TAX
+    ERP_AGENT --> PENDING
+
+    COMPLIANCE --> RAG
 
     RAG <--> REGS
     PDFS -.->|Indexar| RAG
 
-    ERP --> ORCHESTRATOR
-    TAX --> ORCHESTRATOR
-    PENDING --> ORCHESTRATOR
-    RAG --> ORCHESTRATOR
+    ERP --> ERP_AGENT
+    TAX --> ERP_AGENT
+    PENDING --> ERP_AGENT
+    RAG --> COMPLIANCE
+
+    ERP_AGENT --> ORCHESTRATOR
+    COMPLIANCE --> ORCHESTRATOR
 
     ORCHESTRATOR --> DECISION
     DECISION -->|Requiere revisión| HUMAN
@@ -65,7 +73,7 @@ flowchart TD
     classDef memoryStyle fill:#2c3e50,stroke:#3498db,color:#eee
 
     class USER userStyle
-    class ORCHESTRATOR agentStyle
+    class ORCHESTRATOR,ERP_AGENT,COMPLIANCE agentStyle
     class ERP,TAX,PENDING toolStyle
     class RAG,PDFS,REGS ragStyle
     class DECISION,HUMAN,ERP_ACTION decisionStyle
