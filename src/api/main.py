@@ -31,8 +31,15 @@ from src.security.prompt_validator import prompt_validator
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup/shutdown lifecycle."""
-    print("🚀 Starting Castor AI Reconciliation Agent (AutoGen)...")
-    print(f"   Model: {settings.openai_model}")
+    from src.config.llm_provider import LLMConfig
+    try:
+        llm_config = LLMConfig.from_env()
+        print(f"🚀 Starting Castor AI Reconciliation Agent...")
+        print(f"   Provider: {llm_config.provider.value}")
+        print(f"   Model: {llm_config.model}")
+    except Exception as e:
+        print(f"🚀 Starting Castor AI Reconciliation Agent...")
+        print(f"   ⚠️ LLM not configured: {e}")
     yield
     print("👋 Shutting down...")
 

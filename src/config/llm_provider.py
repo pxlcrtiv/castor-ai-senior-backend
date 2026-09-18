@@ -40,6 +40,9 @@ class LLMConfig:
     @classmethod
     def from_env(cls) -> LLMConfig:
         """Load config from environment variables."""
+        from dotenv import load_dotenv
+        load_dotenv()
+
         provider_str = os.environ.get("LLM_PROVIDER", "openai").lower()
 
         try:
