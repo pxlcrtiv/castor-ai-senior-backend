@@ -16,8 +16,8 @@ from src.config.llm_provider import LLMProvider, LLMConfig, create_llm_client, g
 
 # Clean env before each test to prevent leaks
 @pytest.fixture(autouse=True)
-def clean_env():
-    """Remove all LLM env vars between tests."""
+def clean_env(monkeypatch):
+    """Remove all LLM env vars between tests and block .env reload."""
     keys = [
         "LLM_PROVIDER", "OPENAI_API_KEY", "OPENAI_MODEL",
         "GEMINI_API_KEY", "GEMINI_MODEL",
@@ -25,13 +25,10 @@ def clean_env():
         "VERCEL_AI_API_KEY", "VERCEL_AI_BASE_URL", "VERCEL_AI_MODEL",
         "LLM_TEMPERATURE",
     ]
-    saved = {k: os.environ.pop(k, None) for k in keys}
-    yield
-    for k, v in saved.items():
-        if v is not None:
-            os.environ[k] = v
-        elif k in os.environ:
-            del os.environ[k]
+    for k in keys:
+        monkeypatch.delenv(k, raising=False)
+    # Block load_dotenv from re-reading .env during tests
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **kw: None)
 
 
 # ---------------------------------------------------------------------------
