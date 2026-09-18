@@ -41,3 +41,4 @@ data/*.json
 dist/
 build/
 *.egg-info/
+firebase-debug.log
