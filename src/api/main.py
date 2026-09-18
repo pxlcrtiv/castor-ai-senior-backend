@@ -95,9 +95,15 @@ class HealthResponse(BaseModel):
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
     """Health check for load balancers and monitoring."""
+    from src.config.llm_provider import LLMConfig
+    try:
+        llm_config = LLMConfig.from_env()
+        model = llm_config.model
+    except Exception:
+        model = settings.openai_model
     return HealthResponse(
         status="healthy",
-        model=settings.openai_model,
+        model=model,
         version="0.2.0",
         agents=["Conciliator", "ERP_Analyst", "Compliance_Officer"],
     )
@@ -129,17 +135,59 @@ async def query_agent(request: QueryRequest):
             audit_entries=audit_trail.count(session_id),
         )
 
-    # 2. Execute agent team (placeholder — needs real OpenAI key for full demo)
+    # 2. Execute agent team
     try:
-        # For prototype: simulate agent response
-        # In production: use build_team().initiate_chat(...)
-        response_text = (
-            f"🤖 Agente procesando: '{request.query}'\n\n"
-            f"📋 Sesión: {session_id}\n"
-            f"🔑 Rol: {request.user_role}\n\n"
-            f"Nota: Se requiere OPENAI_API_KEY para respuestas reales del agente. "
-            f"El sistema está configurado y listo para operar."
-        )
+        from src.tools.erp_tools import get_erp_data, calculate_tax_discrepancy, list_pending_invoices
+        from src.config.llm_provider import LLMConfig
+
+        # Determine which tools to call based on query
+        query_lower = request.query.lower()
+        response_parts = []
+
+        # Always try to find an order ID in the query
+        import re
+        order_match = re.search(r'#?(\d{4})', request.query)
+
+        if "pendiente" in query_lower or "pending" in query_lower:
+            result = await list_pending_invoices()
+            if result["success"]:
+                invoices = result["data"]["invoices"]
+                response_parts.append(f"📋 Facturas pendientes: {len(invoices)}")
+                for inv in invoices:
+                    response_parts.append(
+                        f"  • #{inv['order_id']} — {inv['supplier']} — ${inv['amount']:,.2f} — {inv['status']}"
+                    )
+            else:
+                response_parts.append(f"⚠️ Error: {result['error']}")
+
+        elif order_match:
+            order_id = order_match.group(1)
+            erp_result = await get_erp_data(order_id)
+            if erp_result["success"]:
+                data = erp_result["data"]
+                response_parts.append(f"📋 Factura #{data['order_id']} — {data['supplier']}")
+                response_parts.append(f"💰 Monto: ${data['amount']:,.2f} MXN")
+                response_parts.append(f"🏷️ Estado: {data['status']}")
+                response_parts.append(f"📍 Región: {data['region']}")
+
+                if data["discrepancy"] > 0:
+                    response_parts.append(f"⚠️ Discrepancia: ${data['discrepancy']:,.2f}")
+                    response_parts.append(f"📝 Razón: {data['discrepancy_reason']}")
+
+                    # Chain to tax calculation
+                    tax_result = await calculate_tax_discrepancy(data["amount"], data["region"])
+                    if tax_result.get("success", True):
+                        response_parts.append(f"\n🧮 Cálculo de impuesto:")
+                        response_parts.append(f"  Tasa esperada: {tax_result['tax_rate']*100}%")
+                        response_parts.append(f"  Impuesto esperado: ${tax_result['expected_tax']:,.2f}")
+            else:
+                response_parts.append(f"❌ Factura #{order_id} no encontrada")
+
+        else:
+            response_parts.append(f"🤖 Procesando: '{request.query}'")
+            response_parts.append(f"💡 Usa el endpoint /invoices/{'{order_id}'} para consultar una factura específica")
+
+        response_text = "\n".join(response_parts) if response_parts else "No se pudo procesar la consulta."
 
         # Log successful access
         audit_trail.log(

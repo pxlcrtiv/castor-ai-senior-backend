@@ -154,3 +154,11 @@ def build_team(
         groupchat=group_chat,
         llm_config=_make_llm_config(llm_config),
     )
+
+
+def create_team(llm_config: "LLMConfig") -> GroupChatManager:
+    """Build a team using a resolved LLMConfig from llm_provider."""
+    from src.config.llm_provider import get_autogen_llm_config
+
+    config_dict = get_autogen_llm_config(llm_config)
+    return build_team(llm_config=config_dict)
