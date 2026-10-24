@@ -18,10 +18,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from src.agents.team import build_team, get_tool_registry
+from src.agents.orchestrator import process_query
 from src.config.settings import settings
-from src.security.rbac import rbac, audit_trail
-from src.security.prompt_validator import prompt_validator
+from src.security.rbac import audit_trail
 
 
 # ---------------------------------------------------------------------------
@@ -124,104 +123,15 @@ async def query_agent(request: QueryRequest):
     """
     session_id = request.session_id or str(uuid.uuid4())
 
-    # 1. Prompt validation (injection + sensitive data)
-    validation = prompt_validator.validate(request.query, request.user_role)
-    if not validation.is_safe:
-        audit_trail.log(
-            role=request.user_role,
-            tool="prompt_validation",
-            query=request.query[:200],
-            allowed=False,
-            session_id=session_id,
-            denial_reason=validation.reason,
-        )
-        return QueryResponse(
-            response=f"⛔ Consulta bloqueada: {validation.reason}",
-            session_id=session_id,
-            blocked=True,
-            audit_entries=audit_trail.count(session_id),
-        )
+    outcome = await process_query(request.query, request.user_role, session_id)
 
-    # 2. Execute agent team
-    try:
-        from src.tools.erp_tools import get_erp_data, calculate_tax_discrepancy, list_pending_invoices
-        from src.config.llm_provider import LLMConfig
-
-        # Determine which tools to call based on query
-        query_lower = request.query.lower()
-        response_parts = []
-
-        # Always try to find an order ID in the query
-        import re
-        order_match = re.search(r'#?(\d{4})', request.query)
-
-        if "pendiente" in query_lower or "pending" in query_lower:
-            result = await list_pending_invoices()
-            if result["success"]:
-                invoices = result["data"]["invoices"]
-                response_parts.append(f"📋 Facturas pendientes: {len(invoices)}")
-                for inv in invoices:
-                    response_parts.append(
-                        f"  • #{inv['order_id']} — {inv['supplier']} — ${inv['amount']:,.2f} — {inv['status']}"
-                    )
-            else:
-                response_parts.append(f"⚠️ Error: {result['error']}")
-
-        elif order_match:
-            order_id = order_match.group(1)
-            erp_result = await get_erp_data(order_id)
-            if erp_result["success"]:
-                data = erp_result["data"]
-                response_parts.append(f"📋 Factura #{data['order_id']} — {data['supplier']}")
-                response_parts.append(f"💰 Monto: ${data['amount']:,.2f} MXN")
-                response_parts.append(f"🏷️ Estado: {data['status']}")
-                response_parts.append(f"📍 Región: {data['region']}")
-
-                if data["discrepancy"] > 0:
-                    response_parts.append(f"⚠️ Discrepancia: ${data['discrepancy']:,.2f}")
-                    response_parts.append(f"📝 Razón: {data['discrepancy_reason']}")
-
-                    # Chain to tax calculation
-                    tax_result = await calculate_tax_discrepancy(data["amount"], data["region"])
-                    if tax_result.get("success", True):
-                        response_parts.append(f"\n🧮 Cálculo de impuesto:")
-                        response_parts.append(f"  Tasa esperada: {tax_result['tax_rate']*100}%")
-                        response_parts.append(f"  Impuesto esperado: ${tax_result['expected_tax']:,.2f}")
-            else:
-                response_parts.append(f"❌ Factura #{order_id} no encontrada")
-
-        else:
-            response_parts.append(f"🤖 Procesando: '{request.query}'")
-            response_parts.append(f"💡 Usa el endpoint /invoices/{'{order_id}'} para consultar una factura específica")
-
-        response_text = "\n".join(response_parts) if response_parts else "No se pudo procesar la consulta."
-
-        # Log successful access
-        audit_trail.log(
-            role=request.user_role,
-            tool="agent_team",
-            query=request.query[:200],
-            allowed=True,
-            session_id=session_id,
-        )
-
-        return QueryResponse(
-            response=response_text,
-            session_id=session_id,
-            blocked=False,
-            audit_entries=audit_trail.count(session_id),
-        )
-
-    except Exception as e:
-        return QueryResponse(
-            response=(
-                "⚠️ Error al procesar la consulta. "
-                "El sistema no está disponible temporalmente."
-            ),
-            session_id=session_id,
-            error=str(e),
-            audit_entries=audit_trail.count(session_id),
-        )
+    return QueryResponse(
+        response=outcome.response,
+        session_id=session_id,
+        blocked=outcome.blocked,
+        audit_entries=outcome.audit_entries,
+        error=outcome.error,
+    )
 
 
 @app.get("/invoices/pending")
