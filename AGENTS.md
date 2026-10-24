@@ -4,11 +4,11 @@
 
 ### Issue tracker
 
-Issues and specs live as markdown files in `.scratch/`. See `docs/agents/issue-tracker.md`.
+GitHub Issues via the `gh` CLI for `pxlcrtiv/castor-ai-senior-backend`. PRs are not a request surface. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
-Five canonical triage roles mapped to local file status. See `docs/agents/triage-labels.md`.
+Five canonical triage roles kept as-is. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
